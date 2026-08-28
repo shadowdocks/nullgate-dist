@@ -27,7 +27,29 @@ DIST_URL=${DIST_URL%/}
 PACKAGE=${NULLGATE_PACKAGE:-}
 PREFIX=${NULLGATE_PREFIX:-"$HOME/.local"}
 BIN_DIR="$PREFIX/bin"
-TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/nullgate-install.XXXXXX")
+
+# Shared hosting can expose /tmp while denying writes to the account. Select a
+# private writable temporary root and export it so uv and Python use the same
+# location during installation.
+TEMP_DIR=
+select_temp_root() {
+  temp_root=$1
+  [ -n "$temp_root" ] || return 1
+  mkdir -p "$temp_root" 2>/dev/null || return 1
+  temp_dir=$(mktemp -d "$temp_root/nullgate-install.XXXXXX" 2>/dev/null) || return 1
+  TEMP_DIR=$temp_dir
+  TMPDIR=$temp_root
+  export TMPDIR
+}
+
+select_temp_root "${TMPDIR:-}" || \
+  select_temp_root "${XDG_CACHE_HOME:+$XDG_CACHE_HOME/tmp}" || \
+  select_temp_root "${HOME:+$HOME/.cache/tmp}" || \
+  select_temp_root "${HOME:+$HOME/.tmp}" || \
+  select_temp_root /tmp || {
+    printf '%s\n' "nullgate: no writable temporary directory found" >&2
+    exit 1
+  }
 
 cleanup() {
   status=$?
